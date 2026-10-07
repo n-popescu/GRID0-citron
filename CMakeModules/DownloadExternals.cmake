@@ -73,11 +73,22 @@ function(download_moltenvk_external platform version)
     if (NOT EXISTS ${MOLTENVK_DIR})
         if (NOT EXISTS ${MOLTENVK_TAR})
             file(DOWNLOAD https://github.com/V380-Ori/Ryujinx.MoltenVK/releases/download/${version}-ryujinx/MoltenVK-${MOLTENVK_ASSET_PLATFORM}.tar
-                ${MOLTENVK_TAR} SHOW_PROGRESS)
+                "${MOLTENVK_TAR}.download" SHOW_PROGRESS STATUS MOLTENVK_DOWNLOAD_STATUS)
+            list(GET MOLTENVK_DOWNLOAD_STATUS 0 MOLTENVK_DOWNLOAD_CODE)
+            if (NOT MOLTENVK_DOWNLOAD_CODE EQUAL 0)
+                file(REMOVE "${MOLTENVK_TAR}.download")
+                message(FATAL_ERROR "MoltenVK download failed: ${MOLTENVK_DOWNLOAD_STATUS}. Supply a local library with -DUSE_SYSTEM_MOLTENVK=ON -DMOLTENVK_LIBRARY=/path/to/libMoltenVK.dylib")
+            endif()
+            file(RENAME "${MOLTENVK_TAR}.download" "${MOLTENVK_TAR}")
         endif()
 
         execute_process(COMMAND ${CMAKE_COMMAND} -E tar xf "${MOLTENVK_TAR}"
-            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/externals")
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/externals"
+            RESULT_VARIABLE MOLTENVK_EXTRACT_RESULT)
+        if (NOT MOLTENVK_EXTRACT_RESULT EQUAL 0)
+            file(REMOVE "${MOLTENVK_TAR}")
+            message(FATAL_ERROR "Failed to extract MoltenVK: ${MOLTENVK_EXTRACT_RESULT}")
+        endif()
     endif()
 
     # Add the MoltenVK library path to the prefix so find_library can locate it.

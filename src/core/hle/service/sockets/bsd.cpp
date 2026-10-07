@@ -277,9 +277,9 @@ void BSD::RecvWork::Response(HLERequestContext& ctx) {
 }
 
 void BSD::RecvFromWork::Execute(BSD* bsd) {
-    std::tie(ret, bsd_errno) = bsd->RecvFromImpl(fd, flags, message, addr);
-    SWITCHNET_TRACE("recvfrom fd={} len={} -> {} errno={}", fd, message.size(), ret,
-                    static_cast<u32>(bsd_errno));
+    std::tie(ret, bsd_errno) = bsd->RecvFromImpl(fd, flags, message, addr, addr_length);
+    SWITCHNET_TRACE("recvfrom fd={} len={} -> {} errno={} addrlen={}", fd, message.size(), ret,
+                    static_cast<u32>(bsd_errno), addr_length);
 }
 
 void BSD::RecvFromWork::Response(HLERequestContext& ctx) {
@@ -292,7 +292,7 @@ void BSD::RecvFromWork::Response(HLERequestContext& ctx) {
     rb.Push(ResultSuccess);
     rb.Push<s32>(ret);
     rb.PushEnum(bsd_errno);
-    rb.Push<u32>(static_cast<u32>(addr.size()));
+    rb.Push<u32>(addr_length);
 }
 
 void BSD::SendWork::Execute(BSD* bsd) {
@@ -1304,7 +1304,8 @@ std::pair<s32, Errno> BSD::RecvImpl(s32 fd, u32 flags, std::vector<u8>& message)
 }
 
 std::pair<s32, Errno> BSD::RecvFromImpl(s32 fd, u32 flags, std::vector<u8>& message,
-                                        std::vector<u8>& addr) {
+                                        std::vector<u8>& addr, u32& addr_length) {
+    addr_length = 0;
     if (!IsFileDescriptorValid(fd)) {
         return {-1, Errno::BADF};
     }
@@ -1324,7 +1325,7 @@ std::pair<s32, Errno> BSD::RecvFromImpl(s32 fd, u32 flags, std::vector<u8>& mess
     if (descriptor.is_connection_based) {
         // Connection based file descriptors (e.g. TCP) zero addr
         addr.clear();
-    } else {
+    } else if (!addr.empty()) {
         p_addr_in = &addr_in;
     }
 
@@ -1349,8 +1350,12 @@ std::pair<s32, Errno> BSD::RecvFromImpl(s32 fd, u32 flags, std::vector<u8>& mess
         if (ret < 0) {
             addr.clear();
         } else {
-            ASSERT(addr.size() == sizeof(SockAddrIn));
+            // A sockaddr_storage-sized guest buffer is valid. Report the actual
+            // IPv4 address length, not its capacity, and truncate only the copy
+            // for a smaller caller buffer, as recvfrom does on the host.
             const SockAddrIn result = Translate(addr_in);
+            addr_length = sizeof(result);
+            addr.resize(std::min(addr.size(), sizeof(result)));
             PutValue(addr, result);
         }
     }

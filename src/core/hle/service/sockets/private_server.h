@@ -31,6 +31,8 @@ std::optional<std::string> PrivateServerRedirect(std::string_view host);
  * default filter, which hides every other socket call.
  */
 void ArmPrivateServerTrace();
+/// Persistent diagnostic tracing, rate-limited per second; off by default.
+void SetPrivateServerTraceEnabled(bool enabled);
 
 /// Whether to log the next traced socket call. Each call uses up one of a fixed budget, so a busy
 /// connection cannot flood the log.

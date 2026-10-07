@@ -1,5 +1,11 @@
 # Citron Neo
 
+This checkout is being adapted for macOS as **Citrosis**, while retaining its
+existing GRID0(+) / private-server integration.
+
+For the macOS build and packaging workflow, see
+[Building Citrosis on macOS](docs/BUILDING-CITROSIS-MACOS.md).
+
 ![what](./dist/citron.svg)
 
 Feel free to open issues and PRs to the repository.

@@ -23,7 +23,7 @@ if (MINGW OR (${CMAKE_SYSTEM_NAME} MATCHES "Linux") OR APPLE)
         message(FATAL_ERROR "Required program `autoconf` not found.")
     endif()
 
-    find_program(LIBTOOLIZE libtoolize)
+    find_program(LIBTOOLIZE NAMES libtoolize glibtoolize)
     if ("${LIBTOOLIZE}" STREQUAL "LIBTOOLIZE-NOTFOUND")
         message(FATAL_ERROR "Required program `libtoolize` not found.")
     endif()
@@ -115,6 +115,12 @@ if (MINGW OR (${CMAKE_SYSTEM_NAME} MATCHES "Linux") OR APPLE)
     add_dependencies(usb usb-build)
     target_link_libraries(usb INTERFACE "${LIBUSB_LIBRARIES}")
     target_include_directories(usb INTERFACE "${LIBUSB_INCLUDE_DIRS}")
+    if (APPLE)
+        # Static archives do not carry the framework dependencies from libusb's
+        # autotools link step to their consumers.
+        target_link_libraries(usb INTERFACE
+            "-framework IOKit" "-framework CoreFoundation" "-framework Security" "-lobjc")
+    endif()
 
 else() # MINGW OR (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     # Ensure libusb compiles with UTF-8 encoding on MSVC

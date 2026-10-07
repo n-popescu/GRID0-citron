@@ -260,7 +260,11 @@ std::shared_ptr<Dynarmic::A64::Jit> ArmDynarmic64::MakeJit(Common::PageTable* pa
         config.detect_misaligned_access_via_page_table = 16 | 32 | 64 | 128;
         config.only_detect_misalignment_via_page_table_on_page_boundary = true;
 
-        config.fastmem_pointer = reinterpret_cast<uintptr_t>(page_table->fastmem_arena);
+        // Platforms without a fastmem arena (including macOS) must use the
+        // page table. An engaged optional containing zero still enables fastmem.
+        if (page_table->fastmem_arena) {
+            config.fastmem_pointer = reinterpret_cast<uintptr_t>(page_table->fastmem_arena);
+        }
         config.fastmem_address_space_bits = uint32_t(address_space_bits);
         config.silently_mirror_fastmem = false;
 

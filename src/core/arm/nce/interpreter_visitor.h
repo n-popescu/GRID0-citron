@@ -89,6 +89,13 @@ public:
     bool LDR_reg_fpsimd(Imm<2> size, Imm<1> opc_1, Reg Rm, Imm<3> option, bool S, Reg Rn,
                         Vec Vt) override;
 
+    bool SIMDMultiple(bool load, bool Q, Imm<4> opcode, Imm<2> size, Reg Rn, Vec Vt,
+                      std::optional<Reg> post_index);
+    bool STx_mult_1(bool Q, Imm<4> opcode, Imm<2> size, Reg Rn, Vec Vt) override;
+    bool STx_mult_2(bool Q, Reg Rm, Imm<4> opcode, Imm<2> size, Reg Rn, Vec Vt) override;
+    bool LDx_mult_1(bool Q, Imm<4> opcode, Imm<2> size, Reg Rn, Vec Vt) override;
+    bool LDx_mult_2(bool Q, Reg Rm, Imm<4> opcode, Imm<2> size, Reg Rn, Vec Vt) override;
+
 private:
     Core::Memory::Memory& m_memory;
     std::span<u64, 31> m_regs;
@@ -97,7 +104,9 @@ private:
     const u64& m_pc;
 };
 
+#ifdef HAS_NCE
 std::optional<u64> MatchAndExecuteOneInstruction(Core::Memory::Memory& memory, mcontext_t* context,
                                                  fpsimd_context* fpsimd_context);
+#endif
 
 } // namespace Core

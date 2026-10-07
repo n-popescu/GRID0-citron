@@ -125,6 +125,15 @@ endif()
 option(CITRON_CHECK_SUBMODULES "Check if submodules are present" ON)
 
 option(CITRON_ENABLE_LTO "Enable link-time optimization" OFF)
+option(CITROSIS_BUILD_METAL "Build native Metal renderer components and diagnostics" ${APPLE})
+if (CITROSIS_BUILD_METAL AND NOT APPLE)
+    message(FATAL_ERROR "The native Metal renderer requires an Apple platform")
+endif()
+if (CITROSIS_BUILD_METAL)
+    # SDL/cubeb also contain .m files. Enabling both keeps those Objective-C
+    # sources from being assigned the Objective-C++ language and C++ flags.
+    enable_language(OBJC OBJCXX)
+endif()
 
 option(CITRON_ENABLE_PGO_GENERATE "Build with PGO instrumentation to generate profile data (Stage 1)" OFF)
 option(CITRON_ENABLE_PGO_USE "Build using PGO profile data for optimization (Stage 2)" OFF)
@@ -228,7 +237,8 @@ if (NOT IS_MULTI_CONFIG AND NOT CMAKE_BUILD_TYPE)
     message(STATUS "Defaulting to a Release build")
 endif()
 
-if(EXISTS ${PROJECT_SOURCE_DIR}/hooks/pre-commit AND NOT EXISTS ${PROJECT_SOURCE_DIR}/.git/hooks/pre-commit)
+option(CITRON_INSTALL_GIT_HOOKS "Install repository Git hooks during configuration" OFF)
+if(CITRON_INSTALL_GIT_HOOKS AND EXISTS ${PROJECT_SOURCE_DIR}/hooks/pre-commit AND NOT EXISTS ${PROJECT_SOURCE_DIR}/.git/hooks/pre-commit)
     if (EXISTS ${PROJECT_SOURCE_DIR}/.git/)
         message(STATUS "Copying pre-commit hook")
         file(COPY hooks/pre-commit DESTINATION ${PROJECT_SOURCE_DIR}/.git/hooks)
@@ -315,6 +325,14 @@ message(STATUS "Target architecture: ${ARCHITECTURE}")
 if (ARCHITECTURE_arm64 AND (ANDROID OR ${CMAKE_SYSTEM_NAME} STREQUAL "Linux"))
     set(HAS_NCE 1)
     add_definitions(-DHAS_NCE=1)
+endif()
+
+if (APPLE AND ARCHITECTURE_arm64 AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    option(CITROSIS_ENABLE_HYPERVISOR "Build the experimental Apple native ARM64 backend" ON)
+    if (CITROSIS_ENABLE_HYPERVISOR)
+        set(HAS_APPLE_HYPERVISOR 1)
+        add_definitions(-DHAS_APPLE_HYPERVISOR=1)
+    endif()
 endif()
 
 # Configure C++ standard
@@ -1030,6 +1048,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CITRON_ENABLE_LTO)
     endforeach()
 endif()
 # Generate AppImage build configuration
+if (APPLE AND ARCHITECTURE_arm64 AND TARGET dynarmic::dynarmic)
+    # Explicit diagnostic target, including in Release builds with tests disabled.
+    add_executable(citrosis-cpu-smoke EXCLUDE_FROM_ALL tools/macos/dynarmic_smoke.cpp)
+    target_link_libraries(citrosis-cpu-smoke PRIVATE dynarmic::dynarmic "-framework CoreFoundation")
+endif()
+
 if (UNIX AND NOT APPLE)
     configure_file(
         "${CMAKE_CURRENT_SOURCE_DIR}/AppImageBuilder/config.sh.in"

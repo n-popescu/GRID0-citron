@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/bit_cast.h"
+#include "common/logging.h"
+#include "core/memory.h"
 #include "core/arm/nce/interpreter_visitor.h"
 
 namespace Core {
@@ -793,6 +795,69 @@ bool InterpreterVisitor::LDR_reg_fpsimd(Imm<2> size, Imm<1> opc_1, Reg Rm, Imm<3
     return this->SIMDOffset(scale, shift, opc_0, Rm, option, Rn, Vt);
 }
 
+bool InterpreterVisitor::SIMDMultiple(bool load, bool Q, Imm<4> opcode, Imm<2> size,
+                                     Reg Rn, Vec Vt, std::optional<Reg> post_index) {
+    size_t repeats{}, structures{};
+    switch (opcode.ZeroExtend()) {
+    case 0: repeats = 1; structures = 4; break;
+    case 2: repeats = 4; structures = 1; break;
+    case 4: repeats = 1; structures = 3; break;
+    case 6: repeats = 3; structures = 1; break;
+    case 7: repeats = 1; structures = 1; break;
+    case 8: repeats = 1; structures = 2; break;
+    case 10: repeats = 2; structures = 1; break;
+    default: return false;
+    }
+    const size_t element_bytes = size_t{1} << size.ZeroExtend();
+    if (!Q && element_bytes == 8 && structures != 1) {
+        return false;
+    }
+    const size_t vector_bytes = Q ? 16 : 8;
+    const u64 base = Rn == Reg::SP ? GetSp() : GetReg(Rn);
+    const u64 increment = post_index && *post_index != Reg::SP ? GetReg(*post_index) :
+                         repeats * structures * vector_bytes;
+    size_t offset = 0;
+    for (size_t r = 0; r < repeats; ++r) {
+        std::array<u128, 4> values{};
+        for (size_t s = 0; s < structures; ++s) {
+            values[s] = GetVec(static_cast<Vec>((static_cast<u32>(Vt) + r + s) % 32));
+            if (load) values[s] = {};
+        }
+        for (size_t e = 0; e < vector_bytes / element_bytes; ++e) {
+            for (size_t s = 0; s < structures; ++s) {
+                auto* lane = reinterpret_cast<u8*>(&values[s]) + e * element_bytes;
+                if (load) m_memory.ReadBlock(base + offset, lane, element_bytes);
+                else m_memory.WriteBlock(base + offset, lane, element_bytes);
+                offset += element_bytes;
+            }
+        }
+        if (load) {
+            for (size_t s = 0; s < structures; ++s) {
+                SetVec(static_cast<Vec>((static_cast<u32>(Vt) + r + s) % 32), values[s]);
+            }
+        }
+    }
+    if (post_index) {
+        if (Rn == Reg::SP) SetSp(base + increment);
+        else SetReg(Rn, base + increment);
+    }
+    return true;
+}
+
+bool InterpreterVisitor::STx_mult_1(bool Q, Imm<4> opcode, Imm<2> size, Reg Rn, Vec Vt) {
+    return SIMDMultiple(false, Q, opcode, size, Rn, Vt, std::nullopt);
+}
+bool InterpreterVisitor::STx_mult_2(bool Q, Reg Rm, Imm<4> opcode, Imm<2> size, Reg Rn, Vec Vt) {
+    return SIMDMultiple(false, Q, opcode, size, Rn, Vt, Rm);
+}
+bool InterpreterVisitor::LDx_mult_1(bool Q, Imm<4> opcode, Imm<2> size, Reg Rn, Vec Vt) {
+    return SIMDMultiple(true, Q, opcode, size, Rn, Vt, std::nullopt);
+}
+bool InterpreterVisitor::LDx_mult_2(bool Q, Reg Rm, Imm<4> opcode, Imm<2> size, Reg Rn, Vec Vt) {
+    return SIMDMultiple(true, Q, opcode, size, Rn, Vt, Rm);
+}
+
+#ifdef HAS_NCE
 std::optional<u64> MatchAndExecuteOneInstruction(Core::Memory::Memory& memory, mcontext_t* context,
                                                  fpsimd_context* fpsimd_context) {
     // Construct the interpreter.
@@ -822,5 +887,6 @@ std::optional<u64> MatchAndExecuteOneInstruction(Core::Memory::Memory& memory, m
 
     return std::nullopt;
 }
+#endif
 
 } // namespace Core

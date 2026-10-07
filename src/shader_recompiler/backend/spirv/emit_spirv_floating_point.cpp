@@ -64,6 +64,10 @@ Id EmitFPAdd16(EmitContext& ctx, IR::Inst* inst, Id a, Id b) {
 }
 
 Id EmitFPAdd32(EmitContext& ctx, IR::Inst* inst, Id a, Id b) {
+    if (ctx.profile.inline_precise_fp32 && inst->Flags<IR::FpControl>().no_contraction) {
+        // Multiplication by one is exact; FMA then rounds the addition once.
+        return ctx.OpFma(ctx.F32[1], ctx.Const(1.0f), a, b);
+    }
     return Decorate(ctx, inst, ctx.OpFAdd(ctx.F32[1], a, b));
 }
 
@@ -104,6 +108,11 @@ Id EmitFPMul16(EmitContext& ctx, IR::Inst* inst, Id a, Id b) {
 }
 
 Id EmitFPMul32(EmitContext& ctx, IR::Inst* inst, Id a, Id b) {
+    if (ctx.profile.inline_precise_fp32 && inst->Flags<IR::FpControl>().no_contraction) {
+        // Match SPIRV-Cross's spvFMul helper exactly, including its zero-sign
+        // behavior, while allowing the intrinsic to remain inline.
+        return ctx.OpFma(ctx.F32[1], a, b, ctx.Const(0.0f));
+    }
     return Decorate(ctx, inst, ctx.OpFMul(ctx.F32[1], a, b));
 }
 

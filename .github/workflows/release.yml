@@ -2,8 +2,8 @@
 #
 # Run it from the Actions tab with a version (for example 1.0.0), which creates the v<version>
 # tag, or push a v* tag yourself. Linux and Windows use the repository's own build scripts
-# without PGO, which needs a profiling session no CI runner can do; macOS has no build script
-# upstream and is built with CMake directly.
+# without PGO, which needs a profiling session no CI runner can do. macOS uses
+# the Citrosis build script, including dependency deployment and signing.
 name: Release
 
 on:
@@ -82,30 +82,29 @@ jobs:
   macos:
     name: macOS (Apple silicon)
     runs-on: macos-15
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      - name: Select Xcode with macOS 26 SDK or later
+        run: |
+          set -euo pipefail
+          for developer in /Applications/Xcode*.app/Contents/Developer; do
+            sdk=$(DEVELOPER_DIR="$developer" xcrun --sdk macosx --show-sdk-version 2>/dev/null) || continue
+            if [[ ${sdk%%.*} =~ ^[0-9]+$ ]] && (( ${sdk%%.*} >= 26 )); then
+              echo "DEVELOPER_DIR=$developer" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+          echo 'The native SwiftUI frontend requires an installed Xcode with macOS SDK 26 or later.' >&2
+          exit 1
       - name: Install dependencies
-        run: |
-          brew install ninja nasm glslang molten-vk vulkan-headers vulkan-loader qt@6 \
-            boost fmt lz4 nlohmann-json zstd sdl2 ffmpeg openssl@3 opus enet catch2
-      - name: Configure
-        run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DCITRON_USE_CPM=ON -DCPM_USE_LOCAL_PACKAGES=ON \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6);$(brew --prefix openssl@3)" \
-            -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" \
-            -DCITRON_TESTS=OFF -DCITRON_USE_PRECOMPILED_HEADERS=OFF -DENABLE_OPENSSL=ON
-      - name: Build
-        run: cmake --build build --parallel
+        run: ./build-citrosis-macos.sh --setup
+      - name: Build and package
+        run: ./build-citrosis-macos.sh --package --build-dir build --jobs 3 -- -DCITROSIS_MACOS_VERSION="${VERSION#v}"
       - name: Collect
         run: |
           set -euo pipefail
           mkdir -p out
-          app=$(find build -name 'citron.app' -maxdepth 4 | head -n1)
-          test -n "$app"
-          "$(brew --prefix qt@6)/bin/macdeployqt" "$app" || true
-          ditto -c -k --keepParent "$app" "out/citron-${VERSION#v}-macos-arm64.zip"
+          cp build/dist/Citrosis-arm64.zip "out/Citrosis-${VERSION#v}-macos-arm64.zip"
           ls -la out
       - uses: actions/upload-artifact@v4
         with:
@@ -115,7 +114,7 @@ jobs:
   publish:
     name: Publish the release
     needs: [linux, windows, macos]
-    if: ${{ !cancelled() && inputs.publish != false && needs.linux.result == 'success' && needs.windows.result == 'success' }}
+    if: ${{ !cancelled() && inputs.publish != false && needs.linux.result == 'success' && needs.windows.result == 'success' && needs.macos.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

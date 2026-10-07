@@ -73,6 +73,7 @@ struct Memory::Impl {
                    GetInteger(target));
         MapPages(page_table, base / CITRON_PAGESIZE, size / CITRON_PAGESIZE, target,
                  Common::PageType::Memory);
+        if (page_table.on_memory_change) page_table.on_memory_change(GetInteger(base), size);
 
         if (current_page_table->fastmem_arena) {
             buffer->Map(GetInteger(base), GetInteger(target) - DramMemoryMap::Base, size, perms,
@@ -86,6 +87,7 @@ struct Memory::Impl {
         ASSERT_MSG((base & CITRON_PAGEMASK) == 0, "non-page aligned base: {:016X}", GetInteger(base));
         MapPages(page_table, base / CITRON_PAGESIZE, size / CITRON_PAGESIZE, 0,
                  Common::PageType::Unmapped);
+        if (page_table.on_memory_change) page_table.on_memory_change(GetInteger(base), size);
 
         if (current_page_table->fastmem_arena) {
             buffer->Unmap(GetInteger(base), size, separate_heap);
@@ -94,6 +96,7 @@ struct Memory::Impl {
 
     void ProtectRegion(Common::PageTable& page_table, VAddr vaddr, u64 size,
                        Common::MemoryPermission perms) {
+        if (page_table.on_memory_change) page_table.on_memory_change(vaddr, size);
         ASSERT_MSG((size & CITRON_PAGEMASK) == 0, "non-page aligned size: {:016X}", size);
         ASSERT_MSG((vaddr & CITRON_PAGEMASK) == 0, "non-page aligned base: {:016X}", vaddr);
 
@@ -467,6 +470,7 @@ struct Memory::Impl {
     }
 
     void RasterizerMarkRegionCached(VAddr vaddr, u64 size, bool cached) {
+        const auto original_vaddr = vaddr;
         if (vaddr < 0x1000) {
             return;
         }
@@ -546,6 +550,11 @@ struct Memory::Impl {
                     UNREACHABLE();
                 }
             }
+        }
+        // Native execution maps pages lazily, so only newly cached pages must be unmapped;
+        // pages leaving the cache fault back in with their new state.
+        if ((cached || current_page_table->notify_uncache) && current_page_table->on_memory_change) {
+            current_page_table->on_memory_change(original_vaddr, size);
         }
     }
 

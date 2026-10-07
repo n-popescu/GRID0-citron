@@ -69,9 +69,15 @@ externals/moltenvk-ios/
 *.keys
 *.dstore
 *.patch
+!patches/dynarmic-arm64-release-cache.patch
 *.7z
 dtrace-out/
 *.diff
 .cache/
 
 .diagnostics/
+
+# Local agent handoff and Python helper caches
+/handoff.md
+__pycache__/
+*.py[cod]

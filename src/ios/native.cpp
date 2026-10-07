@@ -232,6 +232,7 @@ extern "C" void citron_ios_note_oaknut_jit_fault(const char* message)
 namespace IOS {
 namespace {
 EmulationSession instance;
+std::atomic<int> cache_stage{2}, cache_progress{}, cache_total{};
 
 std::string SafeString(const char* value) {
     return value ? std::string{value} : std::string{};
@@ -326,7 +327,9 @@ void EmulationSession::Initialize(const std::string& app_directory) {
     }
 
     Common::FS::SetAppDirectory(app_directory);
+#if TARGET_OS_IPHONE
     ConfigureIOSAppDirectories(app_directory);
+#endif
     Common::Log::Initialize();
     Common::Log::SetColorConsoleBackendEnabled(true);
     Common::Log::Start();
@@ -341,7 +344,9 @@ void EmulationSession::Initialize(const std::string& app_directory) {
     input_subsystem.Initialize();
     system.SetFilesystem(vfs);
 
+#if TARGET_OS_IPHONE
     ConfigureIOSRuntimeSettings();
+#endif
     is_initialized = true;
 }
 
@@ -355,6 +360,10 @@ void EmulationSession::SetNativeLayer(void* metal_layer, int width, int height, 
     if (window) {
         window->OnSurfaceChanged(native_layer, surface_width, surface_height, surface_scale);
     }
+}
+
+void EmulationSession::PrepareContent(const std::string& filepath) {
+    if (!IsRunning()) ConfigureFilesystemProvider(filepath);
 }
 
 void EmulationSession::ConfigureFilesystemProvider(const std::string& filepath) {
@@ -394,6 +403,14 @@ void EmulationSession::ConfigureFilesystemProvider(const std::string& filepath) 
 }
 
 void EmulationSession::InitializeSystem(bool reload) {
+    system.Initialize();
+    system.SetStatus(Core::SystemResultStatus::Success, "");
+    system.RegisterExitCallback([this] {
+        // May run on a CPU fiber while Pause/Stop holds the session mutex. Only signal here;
+        // the session thread performs shutdown after every physical core has returned.
+        is_running.store(false, std::memory_order_release);
+        cv.notify_one();
+    });
     if (!reload) {
         system.SetFilesystem(vfs);
     }
@@ -403,19 +420,21 @@ void EmulationSession::InitializeSystem(bool reload) {
     system.SetContentProvider(std::make_unique<FileSys::ContentProviderUnion>());
     system.RegisterContentProvider(FileSys::ContentProviderUnionSlot::FrontendManual,
                                    manual_provider.get());
-    system.GetFileSystemController().CreateFactories(*vfs);
+    system.GetFileSystemController().InitializeContentSystem(*vfs);
 }
 
 Core::SystemResultStatus EmulationSession::InitializeEmulation(const std::string& filepath,
                                                                std::size_t program_index) {
-    std::scoped_lock lock{mutex};
-    if (!native_layer) {
-        return Core::SystemResultStatus::ErrorVideoCore;
+    {
+        std::scoped_lock lock{mutex};
+        if (!native_layer) {
+            return Core::SystemResultStatus::ErrorVideoCore;
+        }
+        window = std::make_unique<EmuWindow_IOS>(native_layer, surface_width, surface_height,
+                                               surface_scale);
     }
-
-    window = std::make_unique<EmuWindow_IOS>(native_layer, surface_width, surface_height,
-                                             surface_scale);
-
+    // Loading must not hold the surface mutex: AppKit can resize the window
+    // while the backend initializes a title.
     system.SetShuttingDown(false);
     system.ApplySettings();
     Settings::LogSettings();
@@ -469,6 +488,7 @@ Core::SystemResultStatus EmulationSession::Launch(const std::string& filepath,
         std::scoped_lock lock{mutex};
         is_running = true;
         is_paused = false;
+        shader_cache_stop = std::stop_source{};
     }
     emulation_thread = std::thread{[this] { RunEmulation(); }};
     return result;
@@ -499,6 +519,7 @@ void EmulationSession::Stop() {
             return;
         }
         is_running = false;
+        shader_cache_stop.request_stop();
         cv.notify_one();
     }
 
@@ -521,11 +542,13 @@ void EmulationSession::RunEmulation() {
     if (Settings::values.use_disk_shader_cache.GetValue()) {
         LoadDiskCacheProgress(VideoCore::LoadCallbackStage::Prepare, 0, 0);
         system.Renderer().ReadRasterizer()->LoadDiskResources(
-            system.GetApplicationProcessProgramID(), std::stop_token{}, LoadDiskCacheProgress);
+            system.GetApplicationProcessProgramID(), shader_cache_stop.get_token(), LoadDiskCacheProgress);
         LoadDiskCacheProgress(VideoCore::LoadCallbackStage::Complete, 0, 0);
     }
 
-    void(system.Run());
+    if (is_running) {
+        system.Run();
+    }
 
     if (system.DebuggerEnabled()) {
         system.InitializeDebugger();
@@ -538,7 +561,9 @@ void EmulationSession::RunEmulation() {
         }
     }
 
-    ShutdownEmulation(Core::SystemResultStatus::Success);
+    const auto result = system.GetStatusDetails().empty() ? Core::SystemResultStatus::Success
+                                                        : Core::SystemResultStatus::ErrorUnknown;
+    ShutdownEmulation(result);
 }
 
 void EmulationSession::ShutdownEmulation(Core::SystemResultStatus result) {
@@ -597,12 +622,19 @@ void EmulationSession::NotifyEmulationStarted() {
     }
 }
 
-void EmulationSession::LoadDiskCacheProgress(VideoCore::LoadCallbackStage, int, int) {}
+void EmulationSession::LoadDiskCacheProgress(VideoCore::LoadCallbackStage stage, int progress, int total) {
+    cache_progress = progress;
+    cache_total = total;
+    cache_stage = static_cast<int>(stage);
+}
 
 } // namespace IOS
 
 extern "C" {
 
+int citron_apple_cache_stage() { return IOS::cache_stage.load(); }
+int citron_apple_cache_progress() { return IOS::cache_progress.load(); }
+int citron_apple_cache_total() { return IOS::cache_total.load(); }
 void citron_ios_initialize(const char* app_directory) {
     IOS::EmulationSession::GetInstance().Initialize(IOS::SafeString(app_directory));
 #if defined(__APPLE__) && TARGET_OS_IPHONE

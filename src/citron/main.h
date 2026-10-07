@@ -24,6 +24,9 @@
 #include "input_common/drivers/tas_input.h"
 
 
+#if defined(__unix__) || defined(__APPLE__)
+#include <QSocketNotifier>
+#endif
 #ifdef __unix__
 #include <QVariant>
 #include <QtDBus/QDBusInterface>
@@ -261,7 +264,7 @@ private:
     void closeEvent(QCloseEvent* event) override;
     std::string CreateTASFramesString(
         std::array<size_t, InputCommon::TasInput::PLAYER_NUMBER> frames) const;
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
     void SetupSigInterrupts();
     static void HandleSigInterrupt(int);
     void OnSigInterruptNotifierActivated();
@@ -498,7 +501,7 @@ private:
     bool m_is_updating_theme = false;
     bool m_is_configuring = false;
     bool has_performed_initial_sync = false;
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
     QSocketNotifier* sig_interrupt_notifier;
     static std::array<int, 3> sig_interrupt_fds;
 #endif

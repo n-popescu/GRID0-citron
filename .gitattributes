@@ -8,3 +8,6 @@ externals/* linguist-vendored
 
 # Binary IPS patches must never be line-ending-normalized.
 *.ips binary
+
+# Unified diff context lines intentionally carry a single space.
+patches/*.patch whitespace=-blank-at-eol

@@ -387,6 +387,9 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QWidget* parent) {
                           {
                               PAIR(RendererBackend, Vulkan, tr("Vulkan")),
                               PAIR(RendererBackend, Null, tr("Null")),
+#ifdef __APPLE__
+                              PAIR(RendererBackend, Metal, tr("Metal (native, experimental)")),
+#endif
                           }});
     translations->insert({Settings::EnumMetadata<Settings::GpuAccuracy>::Index(),
                           {
@@ -407,7 +410,12 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QWidget* parent) {
     translations->insert({Settings::EnumMetadata<Settings::CpuBackend>::Index(),
                           {
                               PAIR(CpuBackend, Dynarmic, tr("Dynarmic")),
+#ifdef HAS_NCE
                               PAIR(CpuBackend, Nce, tr("NCE")),
+#endif
+#ifdef HAS_APPLE_HYPERVISOR
+                              PAIR(CpuBackend, AppleHypervisor, tr("Apple native ARM64 (experimental)")),
+#endif
                           }});
     translations->insert({Settings::EnumMetadata<Settings::FullscreenMode>::Index(),
                           {

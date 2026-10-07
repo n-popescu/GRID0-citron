@@ -23,6 +23,14 @@
 #include <net/if.h>
 #endif
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#if TARGET_OS_OSX
+#include <SystemConfiguration/SystemConfiguration.h>
+#include <arpa/inet.h>
+#endif
+#endif
+
 namespace Network {
 
 #ifdef _WIN32
@@ -94,6 +102,37 @@ std::vector<NetworkInterface> GetAvailableNetworkInterfaces() {
 
 #else
 
+#if defined(__APPLE__) && TARGET_OS_OSX
+// Read one routing snapshot per enumeration; offline Macs legitimately have no router.
+static std::pair<std::string, u32> GetMacOSDefaultRoute() {
+    const auto value = SCDynamicStoreCopyValue(nullptr, CFSTR("State:/Network/Global/IPv4"));
+    if (!value) {
+        return {};
+    }
+    std::pair<std::string, u32> result;
+    if (CFGetTypeID(value) == CFDictionaryGetTypeID()) {
+        const auto dictionary = static_cast<CFDictionaryRef>(value);
+        const auto interface = static_cast<CFStringRef>(
+            CFDictionaryGetValue(dictionary, kSCDynamicStorePropNetPrimaryInterface));
+        const auto router = static_cast<CFStringRef>(
+            CFDictionaryGetValue(dictionary, kSCPropNetIPv4Router));
+        char interface_name[IF_NAMESIZE]{};
+        char router_address[INET_ADDRSTRLEN]{};
+        if (interface && router && CFGetTypeID(interface) == CFStringGetTypeID() &&
+            CFGetTypeID(router) == CFStringGetTypeID() &&
+            CFStringGetCString(interface, interface_name, sizeof(interface_name), kCFStringEncodingUTF8) &&
+            CFStringGetCString(router, router_address, sizeof(router_address), kCFStringEncodingUTF8)) {
+            in_addr address{};
+            if (inet_pton(AF_INET, router_address, &address) == 1) {
+                result = {interface_name, address.s_addr};
+            }
+        }
+    }
+    CFRelease(value);
+    return result;
+}
+#endif
+
 std::vector<NetworkInterface> GetAvailableNetworkInterfaces() {
     struct ifaddrs* ifaddr = nullptr;
 
@@ -104,6 +143,10 @@ std::vector<NetworkInterface> GetAvailableNetworkInterfaces() {
     }
 
     std::vector<NetworkInterface> result;
+
+#if defined(__APPLE__) && TARGET_OS_OSX
+    const auto [primary_interface, default_gateway] = GetMacOSDefaultRoute();
+#endif
 
     for (auto ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
         if (ifa->ifa_addr == nullptr || ifa->ifa_netmask == nullptr) {
@@ -120,6 +163,11 @@ std::vector<NetworkInterface> GetAvailableNetworkInterfaces() {
 
         u32 gateway{};
 
+#if defined(__APPLE__) && TARGET_OS_OSX
+        if (primary_interface == ifa->ifa_name) {
+            gateway = default_gateway;
+        }
+#elif defined(__linux__)
         std::ifstream file{"/proc/net/route"};
         if (!file.is_open()) {
             LOG_ERROR(Network, "Failed to open \"/proc/net/route\"");
@@ -172,6 +220,7 @@ std::vector<NetworkInterface> GetAvailableNetworkInterfaces() {
         if (!gateway_found) {
             gateway = 0;
         }
+#endif
 
         result.emplace_back(NetworkInterface{
             .name{ifa->ifa_name},
@@ -199,6 +248,17 @@ std::optional<NetworkInterface> GetSelectedNetworkInterface() {
         LOG_ERROR(Network, "GetAvailableNetworkInterfaces returned no interfaces");
         return std::nullopt;
     }
+
+    // Empty means automatic. Prefer the adapter with the default route rather
+    // than an arbitrary bridge/VPN adapter; explicit selections stay explicit.
+    if (selected_network_interface.empty()) {
+        const auto routed = std::ranges::find_if(network_interfaces, [](const auto& iface) {
+            return iface.gateway.s_addr != 0;
+        });
+        return routed != network_interfaces.end() ? *routed : network_interfaces.front();
+    }
+    if (selected_network_interface == "None")
+        return std::nullopt;
 
     const auto res =
         std::ranges::find_if(network_interfaces, [&selected_network_interface](const auto& iface) {

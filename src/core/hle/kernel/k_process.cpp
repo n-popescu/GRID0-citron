@@ -18,6 +18,9 @@
 
 #include "core/arm/dynarmic/arm_dynarmic_32.h"
 #include "core/arm/dynarmic/arm_dynarmic_64.h"
+#ifdef HAS_APPLE_HYPERVISOR
+#include "core/arm/hypervisor/arm_hypervisor.h"
+#endif
 #ifdef HAS_NCE
 #include "core/arm/nce/arm_nce.h"
 #endif
@@ -1283,6 +1286,22 @@ void KProcess::LoadModule(CodeSet code_set, KProcessAddress base_addr) {
 void KProcess::InitializeInterfaces() {
     m_exclusive_monitor =
         Core::MakeExclusiveMonitor(this->GetMemory(), Core::Hardware::NUM_CPU_CORES);
+
+#ifdef HAS_APPLE_HYPERVISOR
+    if (this->IsApplication() && Settings::values.cpu_backend.GetValue() == Settings::CpuBackend::AppleHypervisor) {
+        if (this->Is64Bit() && m_kernel.IsMulticore() && !m_kernel.System().DebuggerEnabled()) {
+            try {
+                auto state = Core::ArmHypervisor::Create(m_kernel.System(), *this);
+                for (auto& interface : m_arm_interfaces) interface = std::make_unique<Core::ArmHypervisor>(state);
+                return;
+            } catch (const std::exception& error) {
+                LOG_ERROR(Core_ARM, "Apple native backend unavailable: {}; falling back to Dynarmic", error.what());
+            }
+        } else {
+            LOG_WARNING(Core_ARM, "Apple native backend requires a 64-bit game, multicore and no debugger; using Dynarmic");
+        }
+    }
+#endif
 
 #ifdef HAS_NCE
     if (this->IsApplication() && Settings::IsNceEnabled()) {

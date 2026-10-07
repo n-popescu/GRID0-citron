@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdlib>
 #include <fstream>
 #include <memory>
 #include <thread>
@@ -342,6 +343,9 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
       serialization_thread(1, "VkPipelineSerialization") {
     const auto& float_control{device.FloatControlProperties()};
     const VkDriverId driver_id{device.GetDriverID()};
+    const char* precise_math = std::getenv("CITROSIS_INLINE_PRECISE_MATH");
+    const bool inline_precise_math = driver_id == VK_DRIVER_ID_MOLTENVK &&
+                                    (!precise_math || std::string_view{precise_math} != "0");
     // OPTIMIZED FOR LOW GPU ACCURACY - enable mediump in fragment shaders for better perf
     const bool low_gpu_accuracy = Settings::IsGPULevelLow();
 
@@ -363,6 +367,7 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
         .support_int64 = device.IsShaderInt64Supported(),
         .support_vertex_instance_id = false,
         .support_float_controls = device.IsKhrShaderFloatControlsSupported(),
+        .inline_precise_fp32 = inline_precise_math,
         .support_separate_denorm_behavior =
             float_control.denormBehaviorIndependence == VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_ALL,
         .support_separate_rounding_mode =

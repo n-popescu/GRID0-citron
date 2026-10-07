@@ -4,11 +4,13 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <iterator>
 #include <mutex>
 #include <numeric>
 #include <sstream>
 #include <thread>
+#include <vector>
 #include <fmt/chrono.h>
 #include <fmt/format.h>
 #include "common/fs/file.h"
@@ -29,7 +31,13 @@ constexpr std::size_t IgnoreFrames = 5;
 
 namespace Core {
 
-PerfStats::PerfStats(u64 title_id_) : title_id(title_id_) {}
+PerfStats::PerfStats(u64 title_id_) : title_id(title_id_) {
+    if (const char* csv = std::getenv("CITROSIS_BENCHMARK_FRAME_CSV")) {
+        benchmark_frames.open(csv);
+        benchmark_frames.precision(9);
+        benchmark_frames << "elapsed_s,frame_ms\n";
+    }
+}
 
 PerfStats::~PerfStats() {
     if (!Settings::values.record_frame_times || title_id == 0) {
@@ -75,6 +83,11 @@ void PerfStats::EndSystemFrame() {
 
     previous_frame_length = frame_end - previous_frame_end;
     previous_frame_end = frame_end;
+    if (benchmark_frames.is_open()) {
+        benchmark_frames << duration_cast<DoubleSecs>(frame_end - benchmark_origin).count() << ','
+                         << std::chrono::duration<double, std::milli>(previous_frame_length).count()
+                         << '\n';
+    }
 }
 
 void PerfStats::EndGameFrame() {
@@ -110,6 +123,24 @@ PerfStatsResults PerfStats::GetAndResetStats(microseconds current_system_time_us
                      static_cast<double>(system_frames),
         .emulation_speed = system_us_per_second.count() / 1'000'000.0,
     };
+
+    // Opt-in wall-clock measurements, independent of CPU accuracy and the UI's
+    // smoothed FPS. Keep raw rendered-frame counts for reproducible comparisons.
+    static const bool benchmark = std::getenv("CITROSIS_BENCHMARK") != nullptr;
+    if (benchmark) {
+        std::vector<double> times(perf_history.begin() + benchmark_index,
+                                  perf_history.begin() + current_index);
+        std::sort(times.begin(), times.end());
+        const double p99 = times.empty() ? 0.0 : times[(times.size() * 99 + 99) / 100 - 1];
+        const double worst = times.empty() ? 0.0 : times.back();
+        benchmark_index = current_index;
+        LOG_INFO(Core, "[CitrosisBenchmark] interval_s={:.3f} frames={} fps={:.3f} "
+                       "system_fps={:.3f} frame_ms={:.3f} speed={:.3f} "
+                       "p99_ms={:.3f} worst_ms={:.3f}",
+                 interval, current_frames, current_fps, results.system_fps,
+                 results.frametime * 1000.0, results.emulation_speed, p99, worst);
+        benchmark_frames.flush();
+    }
 
     if (Settings::values.ultralow_benchmark_logging.GetValue() &&
         Settings::IsCpuUltraLowAccuracy()) {

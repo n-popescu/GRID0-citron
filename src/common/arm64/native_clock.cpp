@@ -5,6 +5,9 @@
 #include <sys/system_properties.h>
 #endif
 #include "common/arm64/native_clock.h"
+#ifdef __APPLE__
+#include <mach/mach_time.h>
+#endif
 
 namespace Common::Arm64 {
 
@@ -50,6 +53,11 @@ s64 NativeClock::GetGPUTick() const {
 }
 
 s64 NativeClock::GetUptime() const {
+#ifdef __APPLE__
+    // macOS: mach_absolute_time is the counter Hypervisor.framework exposes to guests as
+    // CNTVCT_EL0, so host and natively executed guest code read one timeline.
+    return static_cast<s64>(mach_absolute_time());
+#endif
     s64 cntvct_el0 = 0;
     asm volatile("dsb ish\n\t"
                  "mrs %[cntvct_el0], cntvct_el0\n\t"
@@ -64,6 +72,11 @@ bool NativeClock::IsNative() const {
 
 s64 NativeClock::GetHostCNTFRQ() {
     u64 cntfrq_el0 = 0;
+#ifdef __APPLE__
+    mach_timebase_info_data_t timebase{};
+    mach_timebase_info(&timebase);
+    return static_cast<s64>(1'000'000'000ULL * timebase.denom / timebase.numer);
+#endif
     std::string_view board{""};
 #ifdef ANDROID
     char buffer[PROP_VALUE_MAX];

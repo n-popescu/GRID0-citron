@@ -451,10 +451,52 @@ target_sources(citron
 )
 
 if (APPLE)
+    option(CITROSIS_SWIFT_UI "Use the native SwiftUI macOS control bar" ON)
+    if(CITROSIS_SWIFT_UI)
+        # Keep the Swift compiler's module cache inside the build tree, including
+        # compiler detection, instead of writing to the user's home directory.
+        if(NOT CMAKE_Swift_FLAGS MATCHES "-module-cache-path")
+            set(CMAKE_Swift_FLAGS "${CMAKE_Swift_FLAGS} -module-cache-path ${CMAKE_BINARY_DIR}/swift-module-cache"
+                CACHE STRING "Swift compiler flags" FORCE)
+        endif()
+        enable_language(OBJCXX Swift)
+        add_library(citrosis_swift_ui STATIC macos/NativeToolbar.swift)
+        set_target_properties(citrosis_swift_ui PROPERTIES Swift_LANGUAGE_VERSION 5
+            AUTOMOC OFF AUTOUIC OFF AUTORCC OFF COMPILE_OPTIONS "")
+        # CMake's Swift driver does not inherit the C/C++ deployment flag.
+        if(CMAKE_OSX_DEPLOYMENT_TARGET)
+            target_compile_options(citrosis_swift_ui PRIVATE
+                -target "${ARCHITECTURE}-apple-macosx${CMAKE_OSX_DEPLOYMENT_TARGET}")
+        endif()
+        target_link_libraries(citrosis_swift_ui PRIVATE "-framework SwiftUI" "-framework AppKit")
+        target_sources(citron PRIVATE macos/native_toolbar.mm macos/native_toolbar.h)
+        set_source_files_properties(macos/native_toolbar.mm PROPERTIES
+            COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
+        target_compile_definitions(citron PRIVATE CITROSIS_SWIFT_UI)
+        target_link_libraries(citron PRIVATE citrosis_swift_ui "-framework SwiftUI" "-framework AppKit")
+        # Keep the emulator's C++ linker (and its PCH handling). Swift objects
+        # carry autolink entries for their runtime and framework dependencies.
+        set_target_properties(citron PROPERTIES LINKER_LANGUAGE CXX)
+        execute_process(COMMAND "${CMAKE_Swift_COMPILER}" -print-target-info
+            OUTPUT_VARIABLE CITROSIS_SWIFT_TARGET_INFO COMMAND_ERROR_IS_FATAL ANY)
+        string(JSON CITROSIS_SWIFT_RUNTIME_COUNT LENGTH
+            "${CITROSIS_SWIFT_TARGET_INFO}" paths runtimeLibraryPaths)
+        math(EXPR CITROSIS_SWIFT_RUNTIME_LAST "${CITROSIS_SWIFT_RUNTIME_COUNT} - 1")
+        foreach(index RANGE ${CITROSIS_SWIFT_RUNTIME_LAST})
+            string(JSON swift_runtime GET "${CITROSIS_SWIFT_TARGET_INFO}" paths runtimeLibraryPaths ${index})
+            # Compiler search paths must not become runtime paths to Xcode in
+            # the distributable app. Swift install IDs use /usr/lib/swift.
+            target_link_options(citron PRIVATE "-L${swift_runtime}")
+        endforeach()
+    endif()
     set(MACOSX_ICON "../../dist/citron.icns")
     set_source_files_properties(${MACOSX_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     target_sources(citron PRIVATE ${MACOSX_ICON})
     set_target_properties(citron PROPERTIES MACOSX_BUNDLE TRUE)
+    set(CITROSIS_MACOS_VERSION "0.1.0" CACHE STRING "Citrosis macOS bundle version")
+    set_target_properties(citron PROPERTIES
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${CITROSIS_MACOS_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${CITROSIS_MACOS_VERSION}")
     set_target_properties(citron PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist)
 
     if (NOT USE_SYSTEM_MOLTENVK)
