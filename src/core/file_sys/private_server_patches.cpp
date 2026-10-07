@@ -13,40 +13,47 @@ namespace FileSys {
 
 namespace {
 
-// 0x00157B20: LDRB W10,[X21,#0x38] (AA E2 40 39) -> MOV W10,#1 (2A 00 80 52).
-// The pinned-certificate check always passes.
-constexpr std::array<u8, 19> CertificatePinningBypass{
-    'I',  'P',  'S',  '3',  '2',        // magic
-    0x00, 0x15, 0x7B, 0x20, 0x00, 0x04, // offset, size
-    0x2A, 0x00, 0x80, 0x52,             //
-    'E',  'E',  'O',  'F',              // end
-};
-
-// 0x0014E1B0: CBZ W0,+88 (C0 02 00 34) -> NOP (1F 20 03 D5), and
-// 0x0014DD80: MOV W20,W0 (F4 03 00 2A) -> MOV W20,WZR (F4 03 1F 2A).
-// The peer-hostname comparison stops refusing a certificate whose name is not Nintendo's own.
-constexpr std::array<u8, 29> PeerHostnameFix{
-    'I',  'P',  'S',  '3',  '2',        //
-    0x00, 0x14, 0xE1, 0xB0, 0x00, 0x04, //
-    0x1F, 0x20, 0x03, 0xD5,             //
-    0x00, 0x14, 0xDD, 0x80, 0x00, 0x04, //
-    0xF4, 0x03, 0x1F, 0x2A,             //
-    'E',  'E',  'O',  'F',              //
-};
-
-struct BuildPatches {
+// One .ips file from private_server_patches/, named <category>.<build id>.ips there.
+struct EmbeddedPatch {
+    std::string_view category;
     std::string_view build_id;
-    std::array<std::span<const u8>, 2> patches;
+    std::span<const u8> bytes;
+};
+
+// The files themselves, as byte arrays, generated at configure time from the directory above
+// (CMakeModules/GeneratePrivateServerPatches.cmake) so the bytes a console applies and the bytes
+// this emulator applies cannot drift apart. Defines `kEmbeddedPatches`.
+#include "private_server_patches_data.inc"
+
+// Older Splatoon 3 builds that have no files of their own, mapped to the build whose files carry
+// the same bytes and the categories of those files that apply to them.
+//
+// These two were covered before the files were embedded, by the same bytes as 11.3.0's
+// s3grpcverify_bypass (the pinned-certificate check, 0x00157B20) and s3grpcpeer_bypass (the
+// peer-hostname comparison, 0x0014E1B0 and 0x0014DD80): 11.3.0's binary only grew after both
+// sites, so 11.2.0 shares them unchanged. The newer categories (s3certpin_bypass,
+// s3verifyoption_bypass) sit elsewhere in the binary and have never been confirmed for these
+// builds, so they are not applied to them. The oldest build was only ever recorded with the
+// certificate bypass -- its peer-hostname offsets were never established -- and stays that way
+// rather than being guessed at.
+struct SharedSites {
+    std::string_view build_id;
+    std::string_view patch_build_id;
+    std::array<std::string_view, 2> categories;
     size_t count;
 };
 
-// Splatoon 3 builds. 11.3.0's binary grew by 4096 bytes after both patch sites, so 11.2.0's bytes
-// apply to it unchanged. The third, older build is covered by the certificate bypass only, as
-// recorded; its peer-hostname offsets were never established.
-constexpr std::array<BuildPatches, 3> Splatoon3{{
-    {"6830B3A12406CB4716FEC5ADDC35D3E2DC92D212", {CertificatePinningBypass, PeerHostnameFix}, 2},
-    {"28C4287AEE36F7499DA60F3E68B54C70DA382D75", {CertificatePinningBypass, PeerHostnameFix}, 2},
-    {"726D2B882DD9EF10F4A9D73EED088740630FB6C8", {CertificatePinningBypass, {}}, 1},
+constexpr std::array<SharedSites, 2> SharedSiteBuilds{{
+    // 11.2.0
+    {"6830B3A12406CB4716FEC5ADDC35D3E2DC92D212",
+     "28C4287AEE36F7499DA60F3E68B54C70DA382D75",
+     {"s3grpcverify_bypass", "s3grpcpeer_bypass"},
+     2},
+    // An older build, certificate-pinning check only.
+    {"726D2B882DD9EF10F4A9D73EED088740630FB6C8",
+     "28C4287AEE36F7499DA60F3E68B54C70DA382D75",
+     {"s3grpcverify_bypass", {}},
+     1},
 }};
 
 bool SameBuildId(std::string_view a, std::string_view b) {
@@ -62,12 +69,30 @@ std::vector<std::span<const u8>> GetPrivateServerPatches(std::string_view build_
     if (Service::Sockets::PrivateServerAddress().empty()) {
         return {};
     }
-    for (const auto& entry : Splatoon3) {
-        if (SameBuildId(entry.build_id, build_id)) {
-            return {entry.patches.begin(), entry.patches.begin() + entry.count};
+
+    std::string_view patch_build_id = build_id;
+    std::span<const std::string_view> only_categories; // empty means every category
+    for (const auto& shared : SharedSiteBuilds) {
+        if (SameBuildId(shared.build_id, build_id)) {
+            patch_build_id = shared.patch_build_id;
+            only_categories = {shared.categories.data(), shared.count};
+            break;
         }
     }
-    return {};
+
+    std::vector<std::span<const u8>> patches;
+    for (const auto& patch : kEmbeddedPatches) {
+        if (!SameBuildId(patch.build_id, patch_build_id)) {
+            continue;
+        }
+        if (!only_categories.empty() &&
+            std::find(only_categories.begin(), only_categories.end(), patch.category) ==
+                only_categories.end()) {
+            continue;
+        }
+        patches.push_back(patch.bytes);
+    }
+    return patches;
 }
 
 } // namespace FileSys

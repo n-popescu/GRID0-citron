@@ -1254,6 +1254,15 @@ else()
     )
 endif()
 
+# The Splatoon 3 private-server patches are the .ips files a console applies through Atmosphere,
+# copied from the toolbox into file_sys/private_server_patches/ and turned into byte arrays here.
+# See file_sys/private_server_patches.cpp.
+include(GeneratePrivateServerPatches)
+generate_private_server_patches(
+    "${CMAKE_CURRENT_SOURCE_DIR}/file_sys/private_server_patches"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/private_server_patches_data.inc")
+target_include_directories(core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
 # Link against all the libraries that are always required.
 target_link_libraries(core
     PUBLIC

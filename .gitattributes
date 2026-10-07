@@ -5,3 +5,6 @@ dist/languages/* linguist-vendored
 dist/qt_themes/* linguist-vendored
 externals/* linguist-vendored
 *.h linguist-language=cpp
+
+# Binary IPS patches must never be line-ending-normalized.
+*.ips binary
