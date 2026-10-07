@@ -32,10 +32,10 @@ struct EmbeddedPatch {
 // s3grpcverify_bypass (the pinned-certificate check, 0x00157B20) and s3grpcpeer_bypass (the
 // peer-hostname comparison, 0x0014E1B0 and 0x0014DD80): 11.3.0's binary only grew after both
 // sites, so 11.2.0 shares them unchanged. The newer categories (s3certpin_bypass,
-// s3verifyoption_bypass) sit elsewhere in the binary and have never been confirmed for these
-// builds, so they are not applied to them. The oldest build was only ever recorded with the
-// certificate bypass -- its peer-hostname offsets were never established -- and stays that way
-// rather than being guessed at.
+// s3verifyoption_bypass, s3smallmatch_bypass) sit elsewhere in the binary and have never been
+// confirmed for these builds, so they are not applied to them. The oldest build was only ever
+// recorded with the certificate bypass -- its peer-hostname offsets were never established -- and
+// stays that way rather than being guessed at.
 struct SharedSites {
     std::string_view build_id;
     std::string_view patch_build_id;

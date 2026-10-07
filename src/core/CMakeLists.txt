@@ -1255,7 +1255,8 @@ else()
 endif()
 
 # The Splatoon 3 private-server patches are the .ips files a console applies through Atmosphere,
-# copied from the toolbox into file_sys/private_server_patches/ and turned into byte arrays here.
+# copied from the GRID0plus-cfw toolbox into file_sys/private_server_patches/ and turned into byte
+# arrays here.
 # See file_sys/private_server_patches.cpp.
 include(GeneratePrivateServerPatches)
 generate_private_server_patches(
