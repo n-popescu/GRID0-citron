@@ -261,6 +261,13 @@ if (ENABLE_QT)
     add_subdirectory(citron)
 endif()
 
+if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    option(CITROSIS_NATIVE_APP "Build the standalone Swift macOS frontend" ON)
+    if(CITROSIS_NATIVE_APP)
+        add_subdirectory(macos)
+    endif()
+endif()
+
 if (ENABLE_WEB_SERVICE)
     add_subdirectory(web_service)
 endif()

@@ -45,7 +45,10 @@ public:
     // Set 0 layout. In single-set mode this contains everything (cbufs + rest);
     // in split mode it contains only cbufs.
     vk::DescriptorSetLayout CreateDescriptorSetLayout(bool use_push_descriptor) const {
-        return CreateLayoutFor(uniform_set, use_push_descriptor);
+        // Set 1 retains its SPIR-V index even when set 0 has no bindings.
+        // Vulkan requires a valid (possibly empty) layout at every set index.
+        return CreateLayoutFor(uniform_set, use_push_descriptor,
+                               split_mode && !resource_set.bindings.empty());
     }
 
     // Set 1 layout, only meaningful in split mode. Null otherwise.
@@ -156,8 +159,9 @@ private:
         }
     }
 
-    vk::DescriptorSetLayout CreateLayoutFor(const SetData& set, bool use_push_descriptor) const {
-        if (set.bindings.empty()) {
+    vk::DescriptorSetLayout CreateLayoutFor(const SetData& set, bool use_push_descriptor,
+                                           bool preserve_empty_set = false) const {
+        if (set.bindings.empty() && !preserve_empty_set) {
             return nullptr;
         }
         const bool use_uab = !use_push_descriptor && device->IsDescriptorIndexingSupported();

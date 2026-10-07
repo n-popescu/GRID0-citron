@@ -238,7 +238,9 @@ struct Values {
                                                     CpuBackend::Dynarmic,
 #endif
                                                     CpuBackend::Dynarmic,
-#ifdef HAS_NCE
+#ifdef HAS_APPLE_HYPERVISOR
+                                                    CpuBackend::AppleHypervisor,
+#elif defined(HAS_NCE)
                                                     CpuBackend::Nce,
 #else
                                                     CpuBackend::Dynarmic,
@@ -285,7 +287,7 @@ struct Values {
 
     // Renderer
     SwitchableSetting<RendererBackend, true> renderer_backend{
-        linkage, RendererBackend::Vulkan, RendererBackend::Vulkan, RendererBackend::Null,
+        linkage, RendererBackend::Vulkan, RendererBackend::Vulkan, RendererBackend::Metal,
         "backend", Category::Renderer};
     SwitchableSetting<int> vulkan_device{linkage, 0, "vulkan_device", Category::Renderer,
                                          Specialization::RuntimeList};
@@ -482,7 +484,7 @@ struct Values {
                                                                   Category::RendererAdvanced};
 
     SwitchableSetting<bool> async_presentation{linkage,
-#ifdef ANDROID
+#if defined(ANDROID) || defined(__APPLE__)
                                                true,
 #else
                                                false,

@@ -272,6 +272,21 @@ add_library(video_core STATIC
 )
 
 target_link_libraries(video_core PUBLIC common core)
+if (CITROSIS_BUILD_METAL)
+    add_subdirectory(renderer_metal)
+    target_link_libraries(video_core PRIVATE citrosis_metal)
+    target_compile_definitions(video_core PRIVATE CITROSIS_BUILD_METAL)
+    target_sources(video_core PRIVATE renderer_metal/metal_buffer_cache_inst.cpp)
+    target_sources(video_core PRIVATE renderer_metal/metal_image.cpp)
+    target_sources(video_core PRIVATE renderer_metal/metal_texture_cache.cpp
+                                      renderer_metal/metal_texture_cache_inst.cpp
+                                      renderer_metal/metal_rasterizer.cpp
+                                      renderer_metal/metal_query_cache.cpp
+                                      renderer_metal/metal_pipeline_common.cpp
+                                      renderer_metal/metal_pipeline.cpp
+                                      renderer_metal/metal_pipeline_cache.cpp
+                                      renderer_metal/renderer_metal.cpp)
+endif()
 target_link_libraries(video_core PUBLIC glad shader_recompiler stb bc_decoder)
 
 if (CITRON_USE_BUNDLED_FFMPEG AND

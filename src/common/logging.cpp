@@ -9,6 +9,7 @@
 #include <climits>
 #include <cstdlib>
 #include <regex>
+#include <mutex>
 #include <thread>
 #ifdef _WIN32
 #include <windows.h> // For OutputDebugStringW
@@ -334,6 +335,7 @@ struct FileBackend final : public Backend {
     }
     ~FileBackend() noexcept override = default;
     void Write(const Entry& entry) noexcept override {
+        std::scoped_lock lock{mutex};
         if (enabled) {
             bytes_written += file->WriteString(FormatLogMessage(entry).append(1, '\n'));
             using namespace Common::Literals;
@@ -341,18 +343,33 @@ struct FileBackend final : public Backend {
             // spammed.
             const auto write_limit = Settings::values.extended_logging.GetValue() ? 1_GiB : 100_MiB;
             const bool write_limit_exceeded = bytes_written > write_limit;
-            if (entry.log_level >= Level::Error || write_limit_exceeded) {
+            if (entry.log_level >= Level::Error || write_limit_exceeded ||
+                std::chrono::steady_clock::now() - last_flush >= std::chrono::seconds(1)) {
                 // Stop writing after the write limit is exceeded.
                 // Don't close the file so we can print a stacktrace if necessary
                 if (write_limit_exceeded)
                     enabled = false;
-                Flush();
+                FlushUnlocked();
             }
         }
     }
     void Flush() noexcept override {
-        file->Flush();
+        std::scoped_lock lock{mutex};
+        FlushUnlocked();
     }
+    void FlushUnlocked() noexcept {
+        // IOFile reports flush failures through this logger. Permit that error
+        // to be written without recursively attempting the same failed flush.
+        if (flushing)
+            return;
+        flushing = true;
+        file->Flush();
+        flushing = false;
+        last_flush = std::chrono::steady_clock::now();
+    }
+    std::recursive_mutex mutex;
+    bool flushing{};
+    std::chrono::steady_clock::time_point last_flush{std::chrono::steady_clock::now()};
     std::optional<FS::IOFile> file;
     std::size_t bytes_written = 0;
     bool enabled = true;
@@ -449,6 +466,9 @@ void Start() noexcept {
 }
 /// @brief Explicitly stops the logger thread and flushes the buffers
 void Stop() noexcept {
+    Flush();
+}
+void Flush() noexcept {
     if (logging_instance)
         logging_instance->ForEachBackend([](Backend& backend) { backend.Flush(); });
 }

@@ -1254,10 +1254,7 @@ else()
     )
 endif()
 
-# The Splatoon 3 private-server patches are the .ips files a console applies through Atmosphere,
-# copied from the GRID0plus-cfw toolbox into file_sys/private_server_patches/ and turned into byte
-# arrays here.
-# See file_sys/private_server_patches.cpp.
+# Embed the GRID0+ toolbox patches without depending on loose runtime files.
 include(GeneratePrivateServerPatches)
 generate_private_server_patches(
     "${CMAKE_CURRENT_SOURCE_DIR}/file_sys/private_server_patches"
@@ -1294,11 +1291,29 @@ if (MINGW)
     target_link_libraries(core PRIVATE ${MSWSOCK_LIBRARY})
 endif()
 
+if (APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    target_link_libraries(core PRIVATE "-framework SystemConfiguration" "-framework CoreFoundation")
+endif()
+
 if (ENABLE_WEB_SERVICE)
     target_compile_definitions(core PRIVATE -DENABLE_WEB_SERVICE)
     target_link_libraries(core PRIVATE web_service)
     # The SwitchNet account login (hle/service/acc/switchnet_account.cpp) is an HTTPS client.
     target_link_libraries(core PRIVATE httplib::httplib)
+endif()
+
+if (HAS_APPLE_HYPERVISOR)
+    add_library(citrosis-hypervisor STATIC arm/hypervisor/hypervisor_vm.cpp)
+    target_include_directories(citrosis-hypervisor PUBLIC "${PROJECT_SOURCE_DIR}/src")
+    target_link_libraries(citrosis-hypervisor PUBLIC "-framework Hypervisor")
+    target_sources(core PRIVATE arm/hypervisor/arm_hypervisor.cpp arm/nce/interpreter_visitor.cpp)
+    target_link_libraries(core PRIVATE citrosis-hypervisor)
+    add_executable(citrosis-native-smoke EXCLUDE_FROM_ALL "${PROJECT_SOURCE_DIR}/tools/macos/hypervisor_smoke.cpp")
+    target_link_libraries(citrosis-native-smoke PRIVATE citrosis-hypervisor)
+    add_custom_command(TARGET citrosis-native-smoke POST_BUILD
+        COMMAND codesign --force --sign - --entitlements
+            "${PROJECT_SOURCE_DIR}/dist/macos/Citrosis.entitlements" "$<TARGET_FILE:citrosis-native-smoke>"
+        VERBATIM)
 endif()
 
 if (HAS_NCE)

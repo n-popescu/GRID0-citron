@@ -121,11 +121,11 @@ ENUM(AstcRecompression, Uncompressed, Bc1, Bc3);
 
 ENUM(VSyncMode, Immediate, Mailbox, Fifo, FifoRelaxed);
 
-ENUM(RendererBackend, Vulkan, Null);
+ENUM(RendererBackend, Vulkan, Null, Metal);
 
 ENUM(GpuAccuracy, Low, Normal, High, Extreme);
 
-ENUM(CpuBackend, Dynarmic, Nce);
+ENUM(CpuBackend, Dynarmic, Nce, AppleHypervisor);
 
 ENUM(CpuAccuracy, Auto, Accurate, Unsafe, Paranoid, UltraLow);
 

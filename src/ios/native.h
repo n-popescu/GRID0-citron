@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <stop_token>
 #include <thread>
 
 #include "common/detached_tasks.h"
@@ -52,6 +53,9 @@ public:
 
     void SetCallbacks(LifecycleCallback started, LifecycleCallback stopped);
 
+// Populate packaged content for stopped-state native library tools.
+    void PrepareContent(const std::string& filepath);
+
 private:
     void ConfigureFilesystemProvider(const std::string& filepath);
     void InitializeSystem(bool reload);
@@ -81,6 +85,7 @@ private:
     std::condition_variable_any cv;
     mutable std::mutex mutex;
     std::thread emulation_thread;
+    std::stop_source shader_cache_stop;
 
     LifecycleCallback on_started{};
     LifecycleCallback on_stopped{};

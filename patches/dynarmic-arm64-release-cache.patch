@@ -1,0 +1,20 @@
+diff --git a/src/dynarmic/backend/arm64/address_space.cpp b/src/dynarmic/backend/arm64/address_space.cpp
+--- a/src/dynarmic/backend/arm64/address_space.cpp
++++ b/src/dynarmic/backend/arm64/address_space.cpp
+@@ -115,9 +115,13 @@ EmittedBlockInfo AddressSpace::Emit(IR::Block block) {
+ 
+     EmittedBlockInfo block_info = EmitArm64(code, std::move(block), GetEmitConfig(), fastmem_manager);
+ 
+-    ASSERT(block_entries.insert({block.Location(), block_info.entry_point}).second);
+-    ASSERT(reverse_block_entries.insert({block_info.entry_point, block.Location()}).second);
+-    ASSERT(block_infos.insert({block_info.entry_point, block_info}).second);
++    // Cache insertion must execute even when NDEBUG removes assertions.
++    [[maybe_unused]] const bool entry_inserted = block_entries.insert({block.Location(), block_info.entry_point}).second;
++    [[maybe_unused]] const bool reverse_inserted = reverse_block_entries.insert({block_info.entry_point, block.Location()}).second;
++    [[maybe_unused]] const bool info_inserted = block_infos.insert({block_info.entry_point, block_info}).second;
++    ASSERT(entry_inserted);
++    ASSERT(reverse_inserted);
++    ASSERT(info_inserted);
+ 
+     Link(block_info);
+     RelinkForDescriptor(block.Location(), block_info.entry_point);

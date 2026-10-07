@@ -866,6 +866,9 @@ bool GRenderWindow::InitRenderTarget() {
 
     switch (Settings::values.renderer_backend.GetValue()) {
     case Settings::RendererBackend::Vulkan:
+    // The native Metal renderer presents into the same native child window; its
+    // CAMetalLayer is created by QtCommon::GetWindowSystemInfo.
+    case Settings::RendererBackend::Metal:
         if (!InitializeVulkan()) {
             return false;
         }

@@ -20,9 +20,12 @@
 #ifdef __APPLE__
 #include <unistd.h> // for chdir
 #endif
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
 #include <csignal>
 #include <sys/socket.h>
+#include <QSocketNotifier>
+#endif
+#ifdef __unix__
 #include "common/linux/gamemode.h"
 #endif
 
@@ -155,6 +158,9 @@ static FileSys::VirtualFile VfsDirectoryCreateFileWrapper(const FileSys::Virtual
 #include "citron/loading_screen.h"
 #include "citron/main.h"
 #include "citron/grid0_friends_dialog.h"
+#ifdef CITROSIS_SWIFT_UI
+#include "citron/macos/native_toolbar.h"
+#endif
 #include "citron/play_time_manager.h"
 #include "citron/startup_checks.h"
 #include "citron/uisettings.h"
@@ -361,8 +367,10 @@ GMainWindow::GMainWindow(std::unique_ptr<QtConfig> config_, bool has_broken_vulk
       ui{std::make_unique<Ui::MainWindow>()}, config{std::move(config_)},
       vfs{std::make_shared<FileSys::RealVfsFilesystem>()},
       provider{std::make_unique<FileSys::ManualContentProvider>()} {
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
     SetupSigInterrupts();
+#endif
+#ifdef __unix__
     SetGamemodeEnabled(Settings::values.enable_gamemode.GetValue());
 #endif
     system->Initialize();
@@ -624,7 +632,7 @@ GMainWindow::~GMainWindow() {
         delete render_window;
     }
 
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
     ::close(sig_interrupt_fds[0]);
     ::close(sig_interrupt_fds[1]);
 #endif
@@ -1123,7 +1131,9 @@ void GMainWindow::InitializeWidgets() {
     render_window->hide();
 
     game_list = new GameList(vfs, provider.get(), *play_time_manager, *system, this);
+#ifndef CITROSIS_SWIFT_UI
     game_list->SetToolbarInMain(true);
+#endif
     ui->horizontalLayout->addWidget(game_list);
 
     // Create a new master layout for centralwidget
@@ -1132,6 +1142,25 @@ void GMainWindow::InitializeWidgets() {
     master_layout->setContentsMargins(0, 0, 0, 0);
     master_layout->setSpacing(0);
 
+    grid0_menu = new QMenu(tr("GRID0+"), ui->menubar);
+#ifdef CITROSIS_SWIFT_UI
+    ui->menubar->setNativeMenuBar(true);
+    ui->action_Configure->setMenuRole(QAction::PreferencesRole);
+    ui->action_About->setMenuRole(QAction::AboutRole);
+    ui->action_Exit->setMenuRole(QAction::QuitRole);
+    ui->menubar->insertMenu(ui->menu_Multiplayer->menuAction(), grid0_menu);
+    auto* add_directory_command = new QAction(tr("Add Game Folder…"), this);
+    connect(add_directory_command, &QAction::triggered, this,
+            &GMainWindow::OnGameListAddDirectory);
+    ui->menu_File->insertAction(ui->action_Load_Folder, add_directory_command);
+    auto* friends_command = new QAction(tr("GRID0+"), this);
+    connect(friends_command, &QAction::triggered, this, [this] {
+        if (!grid0_menu->actions().empty()) grid0_menu->actions().front()->trigger();
+    });
+    unified_top_bar = CreateCitrosisNativeToolbar(this,
+        {ui->action_Load_File, add_directory_command, ui->action_Pause,
+         ui->action_Stop, ui->action_Configure, friends_command});
+#else
     // Unified Top Bar creation
     unified_top_bar = new QWidget(this);
     unified_top_bar->setObjectName(QStringLiteral("UnifiedTopBar"));
@@ -1181,7 +1210,6 @@ void GMainWindow::InitializeWidgets() {
     add_menu(ui->menu_Emulation);
     add_menu(ui->menu_View);
     add_menu(ui->menu_Tools);
-    grid0_menu = new QMenu(tr("GRID0+"), ui->menubar);
     add_menu(grid0_menu);
     add_menu(ui->menu_Multiplayer);
     add_menu(ui->menu_Help);
@@ -1197,6 +1225,7 @@ void GMainWindow::InitializeWidgets() {
                                           Qt::AlignRight | Qt::AlignVCenter);
     }
 
+#endif
     ui->action_Show_Filter_Bar->setChecked(true);
     ui->action_Show_Status_Bar->setChecked(true);
     ui->action_Fullscreen->setChecked(windowState().testFlag(Qt::WindowFullScreen));
@@ -1214,7 +1243,11 @@ void GMainWindow::InitializeWidgets() {
     // Now set the new master layout as the central layout
     ui->centralwidget->setLayout(master_layout);
 
+#ifdef CITROSIS_SWIFT_UI
+    ui->menubar->show();
+#else
     ui->menubar->hide();
+#endif
 
     game_list_placeholder = new GameListPlaceholder(this);
     ui->horizontalLayout->addWidget(game_list_placeholder);
@@ -1998,6 +2031,9 @@ void GMainWindow::UpdateMenuState() {
 
     ui->action_Capture_Screenshot->setEnabled(emulation_running && !is_paused);
 
+#ifdef CITROSIS_SWIFT_UI
+    ui->action_Pause->setProperty("citrosisPaused", is_paused);
+#endif
     if (emulation_running && is_paused) {
         ui->action_Pause->setText(tr("&Continue"));
     } else {
@@ -2063,7 +2099,7 @@ void GMainWindow::OnPrepareForSleep(bool prepare_sleep) {
     }
 }
 
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
 std::array<int, 3> GMainWindow::sig_interrupt_fds{0, 0, 0};
 
 void GMainWindow::SetupSigInterrupts() {
@@ -4695,7 +4731,12 @@ void GMainWindow::OnToggleGraphicsAPI() {
     if (api != Settings::RendererBackend::Vulkan) {
         api = Settings::RendererBackend::Vulkan;
     } else {
+#ifdef __APPLE__
+        // Citrosis: toggle between Vulkan (MoltenVK) and the native Metal renderer.
+        api = Settings::RendererBackend::Metal;
+#else
         api = Settings::RendererBackend::Null;
+#endif
     }
     Settings::values.renderer_backend.SetValue(api);
     renderer_status_button->setChecked(api == Settings::RendererBackend::Vulkan);
@@ -5767,7 +5808,11 @@ void GMainWindow::MigrateConfigFiles() {
 void GMainWindow::UpdateWindowTitle(std::string_view title_name, std::string_view title_version,
                                     std::string_view gpu_vendor) {
     // Build the base title from the CMake-generated variables.
+#ifdef CITROSIS_SWIFT_UI
+    std::string base_title = "Citrosis ";
+#else
     std::string base_title = "citron ";
+#endif
     base_title += Common::g_build_fullname; // This is "Nightly " or "" for Stable
     base_title += "| ";
     base_title += Common::g_build_version; // This is the git hash or Stable version tag.
@@ -6866,6 +6911,9 @@ int main(int argc, char* argv[]) {
 
     QCoreApplication::setOrganizationName(QStringLiteral("citron team"));
     QCoreApplication::setApplicationName(QStringLiteral("citron-neo: The switch fell off"));
+#ifdef CITROSIS_SWIFT_UI
+    QGuiApplication::setApplicationDisplayName(QStringLiteral("Citrosis"));
+#endif
 
 #ifdef _WIN32
     _setmaxstdio(8192);
@@ -6874,6 +6922,11 @@ int main(int argc, char* argv[]) {
 #ifdef __APPLE__
     const auto bin_path = Common::FS::GetBundleDirectory() / "..";
     chdir(Common::FS::PathToUTF8String(bin_path).c_str());
+    // MoltenVK defaults (environment overrides win). A single failed Metal command buffer
+    // is logged and the device keeps running instead of aborting the whole emulator, and
+    // Metal may compile pipelines on all cores to shorten shader stutter.
+    setenv("MVK_CONFIG_RESUME_LOST_DEVICE", "1", 0);
+    setenv("MVK_CONFIG_SHOULD_MAXIMIZE_CONCURRENT_COMPILATION", "1", 0);
 #endif
 
 #ifdef __linux__

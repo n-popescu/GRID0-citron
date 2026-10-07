@@ -122,6 +122,7 @@ private:
         u32 flags;
         std::vector<u8> message;
         std::vector<u8> addr;
+        u32 addr_length{};
         s32 ret{};
         Errno bsd_errno{};
     };
@@ -213,7 +214,7 @@ private:
     Errno ShutdownImpl(s32 fd, s32 how);
     std::pair<s32, Errno> RecvImpl(s32 fd, u32 flags, std::vector<u8>& message);
     std::pair<s32, Errno> RecvFromImpl(s32 fd, u32 flags, std::vector<u8>& message,
-                                       std::vector<u8>& addr);
+                                       std::vector<u8>& addr, u32& addr_length);
     std::pair<s32, Errno> SendImpl(s32 fd, u32 flags, std::span<const u8> message);
     std::pair<s32, Errno> SendToImpl(s32 fd, u32 flags, std::span<const u8> message,
                                      std::span<const u8> addr);

@@ -37,7 +37,7 @@ std::mutex mutex;
 std::string cached_token;
 std::string cached_access_token;
 std::chrono::system_clock::time_point cached_expiry;
-std::string cached_for; // server + username the cached token belongs to
+std::string cached_for; // internal credentials/trust identity; never log this
 std::set<std::string> reported_failures;
 // A game asks for its token repeatedly; after a failed login, do not hammer the server (whose
 // login is rate limited) with the same wrong password on every call.
@@ -255,8 +255,12 @@ bool IsConfigured() {
 namespace {
 // Logs in if the cached tokens are missing or about to expire. Holds `mutex`.
 bool EnsureLoggedIn() {
+    // Changing a password or trust bundle must invalidate both cached tokens
+    // and a failed-login cooldown. This identity is internal and never logged.
     const std::string identity = Settings::values.switchnet_server.GetValue() + '\n' +
-                                 Settings::values.switchnet_username.GetValue();
+                                 Settings::values.switchnet_username.GetValue() + '\n' +
+                                 Settings::values.switchnet_password.GetValue() + '\n' +
+                                 Settings::values.private_server_ca_bundle.GetValue();
     if (!cached_token.empty() && cached_for == identity &&
         std::chrono::system_clock::now() + ExpiryMargin < cached_expiry) {
         return true;

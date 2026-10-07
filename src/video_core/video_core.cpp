@@ -13,6 +13,9 @@
 #include "video_core/renderer_base.h"
 #include "video_core/renderer_null/renderer_null.h"
 #include "video_core/renderer_vulkan/renderer_vulkan.h"
+#ifdef CITROSIS_BUILD_METAL
+#include "video_core/renderer_metal/renderer_metal.h"
+#endif
 #include "video_core/video_core.h"
 
 namespace {
@@ -24,6 +27,13 @@ std::unique_ptr<VideoCore::RendererBase> CreateRenderer(Core::System& system, Co
         return std::make_unique<Vulkan::RendererVulkan>(emu_window, device_memory, gpu, std::move(context));
     case Settings::RendererBackend::Null:
         return std::make_unique<Null::RendererNull>(emu_window, gpu, std::move(context));
+    case Settings::RendererBackend::Metal:
+#ifdef CITROSIS_BUILD_METAL
+        return std::make_unique<NativeMetal::RendererMetal>(emu_window, device_memory, gpu,
+                                                            std::move(context));
+#else
+        throw std::runtime_error("This build has no native Metal renderer");
+#endif
     default:
         return nullptr;
     }

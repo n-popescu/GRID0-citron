@@ -202,7 +202,7 @@ if(ARCHITECTURE_x86_64)
     target_link_libraries(common PRIVATE xbyak::xbyak)
 endif()
 
-if (HAS_NCE)
+if (HAS_NCE OR (APPLE AND ARCHITECTURE_arm64))
     target_sources(common
         PRIVATE
             arm64/native_clock.cpp

@@ -73,6 +73,8 @@ struct Filter {
 void Initialize() noexcept;
 void Start() noexcept;
 void Stop() noexcept;
+/// Make buffered log output visible without stopping the logger.
+void Flush() noexcept;
 void SetGlobalFilter(const Filter& filter) noexcept;
 void SetColorConsoleBackendEnabled(bool enabled) noexcept;
 

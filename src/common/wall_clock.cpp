@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2020 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
 #include "common/steady_clock.h"
 #include "common/wall_clock.h"
 
@@ -10,7 +11,7 @@
 #include "common/x64/rdtsc.h"
 #endif
 
-#ifdef HAS_NCE
+#if defined(HAS_NCE) || (defined(__APPLE__) && defined(__aarch64__))
 #include "common/arm64/native_clock.h"
 #endif
 
@@ -66,7 +67,11 @@ std::unique_ptr<WallClock> CreateOptimalClock() {
         // - Is not more precise than 1 GHz (1ns resolution)
         return std::make_unique<StandardWallClock>();
     }
-#elif defined(HAS_NCE)
+#elif defined(HAS_NCE) || (defined(__APPLE__) && defined(__aarch64__))
+#if defined(__APPLE__)
+    if (const char* standard = std::getenv("CITROSIS_STANDARD_CLOCK"); standard && *standard == '1')
+        return std::make_unique<StandardWallClock>(); // diagnostics only
+#endif
     return std::make_unique<Arm64::NativeClock>();
 #else
     return std::make_unique<StandardWallClock>();

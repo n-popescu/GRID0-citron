@@ -666,7 +666,7 @@ void GraphicsPipeline::ConfigureDraw(const RescalingPushConstant& rescaling,
                 (descriptor_set_cache_rr + 1) % DESC_SET_CACHE_SIZE;
             return fresh;
         };
-        if (descriptor_set_layout) {
+        if (descriptor_update_template) {
             if (uses_push_descriptor) {
                 cmdbuf.PushDescriptorSetWithTemplateKHR(*descriptor_update_template,
                                                         *pipeline_layout, 0, descriptor_data);

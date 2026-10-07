@@ -27,6 +27,8 @@ struct Profile {
     bool support_int64{};
     bool support_vertex_instance_id{};
     bool support_float_controls{};
+    /// Metal/MoltenVK lowering of precise FP32 arithmetic to explicit FMA.
+    bool inline_precise_fp32{};
     bool support_separate_denorm_behavior{};
     bool support_separate_rounding_mode{};
     bool support_fp16_denorm_preserve{};

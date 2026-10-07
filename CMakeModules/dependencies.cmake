@@ -25,6 +25,11 @@
 set(CITRON_CHECK_SUBMODULES OFF CACHE BOOL "Force disable submodule presence checks" FORCE)
 set(CITRON_USE_BUNDLED_VCPKG OFF CACHE BOOL "Force disable vcpkg usage" FORCE)
 
+# CITRON_TESTS controls our tests separately. Do not build upstream test suites,
+# even when include(CTest) left a normal BUILD_TESTING variable enabled.
+set(BUILD_TESTING OFF)
+set(BUILD_SHARED_LIBS OFF)
+
 if (NOT COMMAND CPMAddPackage)
     message(FATAL_ERROR "CPM.cmake not loaded — include CMakeModules/CPM.cmake before this file")
 endif()
@@ -393,6 +398,7 @@ if (ARCHITECTURE_arm64 AND NOT TARGET merry::oaknut)
         NAME oaknut
         GITHUB_REPOSITORY yuzu-mirror/oaknut
         GIT_TAG 94c726ce0338b054eb8cb5ea91de8fe6c19f4392
+        OPTIONS "BUILD_TESTING OFF"
     )
 endif()
 
@@ -437,6 +443,8 @@ if ((ARCHITECTURE_x86_64 OR ARCHITECTURE_arm64) AND NOT (MSVC AND ARCHITECTURE_a
                 "DYNARMIC_TESTS OFF"
         )
         if (TARGET dynarmic AND NOT TARGET dynarmic::dynarmic)
+            include(PatchDynarmic)
+            citrosis_patch_dynarmic("${dynarmic_SOURCE_DIR}")
             add_library(dynarmic::dynarmic ALIAS dynarmic)
         endif()
         if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND dynarmic_ADDED)

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <array>
 #include <map>
 
 #include <fmt/format.h>
@@ -65,8 +66,38 @@ bool Grid0BcatBackend::Sync(TitleIDVersion title, const std::string* only_direct
     }
     const auto body = nlohmann::json::parse(list->body, nullptr, false);
     if (!body.is_object() || !body.contains("directories") || !body["directories"].is_array()) {
+        LOG_WARNING(Service_BCAT, "GRID0+: invalid BCAT manifest for {}; keeping cache", title_hex);
         progress.FinishDownload(ResultSuccess);
         return true;
+    }
+
+    // Validate the entire manifest before modifying the delivery cache. A malformed entry must
+    // not throw from json::value(), or make a partial list look like deleted server content.
+    for (const auto& dir : body["directories"]) {
+        if (!dir.is_object() || !dir.contains("name") || !dir["name"].is_string() ||
+            !IsSafeName(dir["name"].get<std::string>()) || !dir.contains("files") ||
+            !dir["files"].is_array()) {
+            LOG_WARNING(Service_BCAT, "GRID0+: invalid BCAT directory for {}; keeping cache", title_hex);
+            progress.FinishDownload(ResultSuccess);
+            return true;
+        }
+        for (const auto& file : dir["files"]) {
+            if (!file.is_object() || !file.contains("name") || !file["name"].is_string() ||
+                !IsSafeName(file["name"].get<std::string>()) || !file.contains("sha256") ||
+                !file["sha256"].is_string()) {
+                LOG_WARNING(Service_BCAT, "GRID0+: invalid BCAT file for {}; keeping cache", title_hex);
+                progress.FinishDownload(ResultSuccess);
+                return true;
+            }
+            const auto hash = file["sha256"].get<std::string>();
+            if (hash.size() != 64 || !std::all_of(hash.begin(), hash.end(), [](char c) {
+                    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+                })) {
+                LOG_WARNING(Service_BCAT, "GRID0+: invalid BCAT hash for {}; keeping cache", title_hex);
+                progress.FinishDownload(ResultSuccess);
+                return true;
+            }
+        }
     }
 
     progress.StartProcessingDataList();

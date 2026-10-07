@@ -7,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <fstream>
 #include <mutex>
 #include "common/common_types.h"
 
@@ -58,6 +59,9 @@ private:
     u64 title_id{0};
     /// Current index for writing to the perf_history array
     std::size_t current_index{0};
+    std::size_t benchmark_index{0};
+    std::ofstream benchmark_frames;
+    Clock::time_point benchmark_origin = Clock::now();
     /// Stores an hour of historical frametime data useful for processing and tracking performance
     /// regressions with code changes.
     std::array<double, 216000> perf_history{};

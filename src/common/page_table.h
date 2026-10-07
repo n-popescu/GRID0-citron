@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 
 #include "common/common_types.h"
 #include "common/typed_address.h"
@@ -93,6 +94,10 @@ struct PageTable {
     };
 
     PageTable();
+    // Installed before guest execution; the callback must be thread-safe.
+    std::function<void(u64, u64)> on_memory_change;
+    // Also report pages the GPU stops tracking (diagnostics only).
+    bool notify_uncache{false};
     ~PageTable() noexcept;
 
     PageTable(const PageTable&) = delete;

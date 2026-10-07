@@ -5,6 +5,8 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <chrono>
+#include <mutex>
 
 #include "common/logging.h"
 #include "common/settings.h"
@@ -105,13 +107,37 @@ namespace {
 // for a retry; a poll that is re-checked while deferred is not counted until it returns.
 constexpr int TraceBudget = 256;
 std::atomic<int> trace_remaining{0};
+std::atomic<bool> persistent_trace{false};
+std::mutex trace_mutex;
+std::chrono::steady_clock::time_point trace_window{};
+int window_remaining{};
+constexpr int PersistentTraceBudget = 512;
 } // namespace
 
 void ArmPrivateServerTrace() {
     trace_remaining.store(TraceBudget, std::memory_order_relaxed);
 }
 
+void SetPrivateServerTraceEnabled(bool enabled) {
+    std::scoped_lock lock{trace_mutex};
+    trace_window = {};
+    window_remaining = 0;
+    persistent_trace.store(enabled, std::memory_order_relaxed);
+}
+
 bool TakePrivateServerTrace() {
+    if (persistent_trace.load(std::memory_order_relaxed)) {
+        std::scoped_lock lock{trace_mutex};
+        const auto now = std::chrono::steady_clock::now();
+        if (now - trace_window >= std::chrono::seconds(1)) {
+            trace_window = now;
+            window_remaining = PersistentTraceBudget;
+        }
+        if (window_remaining == 0)
+            return false;
+        --window_remaining;
+        return true;
+    }
     int remaining = trace_remaining.load(std::memory_order_relaxed);
     while (remaining > 0) {
         if (trace_remaining.compare_exchange_weak(remaining, remaining - 1,
